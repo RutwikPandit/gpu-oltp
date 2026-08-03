@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="650" viewBox="0 0 1100 650">
+  <rect width="1100" height="650" fill="#ffffff"/>
+  <text x="70" y="48" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700" fill="#111111">
+    End-to-end index probe cost: Grace CPU vs GH200 persistent runtime
+  </text>
+  <text x="70" y="78" font-family="Arial, Helvetica, sans-serif" font-size="16" fill="#555555">
+    Memory-resident ~1.6 GB index; lower is better. Simplified from measured sweep.
+  </text>
+
+  <line x1="110" y1="520" x2="990" y2="520" stroke="#222222" stroke-width="2"/>
+  <line x1="110" y1="100" x2="110" y2="520" stroke="#222222" stroke-width="2"/>
+
+  <line x1="110" y1="440" x2="990" y2="440" stroke="#e6e6e6" stroke-width="1"/>
+  <line x1="110" y1="360" x2="990" y2="360" stroke="#e6e6e6" stroke-width="1"/>
+  <line x1="110" y1="280" x2="990" y2="280" stroke="#e6e6e6" stroke-width="1"/>
+  <line x1="110" y1="200" x2="990" y2="200" stroke="#e6e6e6" stroke-width="1"/>
+  <line x1="110" y1="120" x2="990" y2="120" stroke="#e6e6e6" stroke-width="1"/>
+
+  <text x="48" y="524" font-family="Arial, Helvetica, sans-serif" font-size="15" fill="#333333">0.25</text>
+  <text x="48" y="444" font-family="Arial, Helvetica, sans-serif" font-size="15" fill="#333333">0.50</text>
+  <text x="48" y="364" font-family="Arial, Helvetica, sans-serif" font-size="15" fill="#333333">0.75</text>
+  <text x="48" y="284" font-family="Arial, Helvetica, sans-serif" font-size="15" fill="#333333">1.00</text>
+  <text x="48" y="204" font-family="Arial, Helvetica, sans-serif" font-size="15" fill="#333333">1.25</text>
+  <text x="48" y="124" font-family="Arial, Helvetica, sans-serif" font-size="15" fill="#333333">1.50</text>
+  <text x="20" y="310" font-family="Arial, Helvetica, sans-serif" font-size="16" fill="#333333" transform="rotate(-90 20 310)">ns / operation</text>
+
+  <text x="137" y="548" font-family="Arial, Helvetica, sans-serif" font-size="15" fill="#333333">256</text>
+  <text x="220" y="548" font-family="Arial, Helvetica, sans-serif" font-size="15" fill="#333333">512</text>
+  <text x="260" y="548" font-family="Arial, Helvetica, sans-serif" font-size="15" fill="#333333">640</text>
+  <text x="320" y="548" font-family="Arial, Helvetica, sans-serif" font-size="15" fill="#333333">1K</text>
+  <text x="455" y="548" font-family="Arial, Helvetica, sans-serif" font-size="15" fill="#333333">4K</text>
+  <text x="688" y="548" font-family="Arial, Helvetica, sans-serif" font-size="15" fill="#333333">64K</text>
+  <text x="885" y="548" font-family="Arial, Helvetica, sans-serif" font-size="15" fill="#333333">1M</text>
+  <text x="430" y="590" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#333333">batch size B (log-spaced)</text>
+
+  <line x1="110" y1="330" x2="990" y2="330" stroke="#cc3333" stroke-width="4"/>
+  <text x="735" y="318" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#cc3333">
+    Grace 64T DRAM: 0.842 ns/op
+  </text>
+
+  <polyline points="160,162 240,329 270,334 330,342 470,364 650,438 710,474 900,502"
+            fill="none" stroke="#1f6feb" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <circle cx="160" cy="162" r="6" fill="#1f6feb"/>
+  <circle cx="240" cy="329" r="6" fill="#1f6feb"/>
+  <circle cx="270" cy="334" r="7" fill="#1f6feb"/>
+  <circle cx="330" cy="342" r="6" fill="#1f6feb"/>
+  <circle cx="470" cy="364" r="6" fill="#1f6feb"/>
+  <circle cx="650" cy="438" r="6" fill="#1f6feb"/>
+  <circle cx="710" cy="474" r="6" fill="#1f6feb"/>
+  <circle cx="900" cy="502" r="7" fill="#1f6feb"/>
+
+  <line x1="270" y1="100" x2="270" y2="520" stroke="#111111" stroke-width="2" stroke-dasharray="8 8"/>
+  <rect x="285" y="118" width="260" height="72" fill="#ffffff" stroke="#111111" stroke-width="1.5"/>
+  <text x="302" y="146" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#111111">
+    claimed crossover
+  </text>
+  <text x="302" y="174" font-family="Arial, Helvetica, sans-serif" font-size="19" fill="#111111">
+    B ~= 640, 40/40 reps
+  </text>
+
+  <text x="722" y="489" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#1f6feb">
+    GPU runtime: 0.30 ns/op at B=1M
+  </text>
+  <text x="118" y="150" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#1f6feb">
+    small batches pay dispatch
+  </text>
+  <text x="360" y="625" font-family="Arial, Helvetica, sans-serif" font-size="14" fill="#777777">
+    Target regime: realistic DRAM/HBM-resident indexes, not single-row latency.
+  </text>
+</svg>

@@ -1,0 +1,52 @@
+populated 67108864 keys (val == low key slice)
+prefilled 1048576 uniform-random request keys in [1, 67108864]
+launch-mode baseline done
+persistent v2: 1320 blocks (8 dispatchers + 1312 serving, 10496 tiles), 32 slots/block, window<=64
+v2 FIND validate (offset 0):    4096/4096 correct
+v2 FIND validate (offset wrap): 4096/4096 correct
+v2 INSERT+FIND validate:        1024/1024 correct
+v2 pipelined validate:          512/512 correct
+protocol floor (count=0 sync rendezvous): 6.21 us
+protocol floor (count=0 pipelined, W=64): 0.24 us/batch
+
+pipelined NOOP cadence (no probes):
+  B=64           0.26 us/batch     4.094 ns/op
+  B=256          0.31 us/batch     1.198 ns/op
+  B=512          0.37 us/batch     0.723 ns/op
+  B=768          0.40 us/batch     0.526 ns/op
+  B=1024         0.46 us/batch     0.446 ns/op
+  B=2048         0.88 us/batch     0.432 ns/op
+  B=4096         1.66 us/batch     0.406 ns/op
+  B=8192         3.13 us/batch     0.382 ns/op
+  B=16384        3.85 us/batch     0.235 ns/op
+  B=32768        4.45 us/batch     0.136 ns/op
+  B=65536        5.62 us/batch     0.086 ns/op
+  B=131072       7.89 us/batch     0.060 ns/op
+  B=262144      13.55 us/batch     0.052 ns/op
+  B=1048576     52.21 us/batch     0.050 ns/op
+
+uniform-random FIND against 67108864-key table [measured GH200]
+B         launch(us)   sync(us)    sync ns/op   pipe ns/op    pipe Mop/s     vs Grace64T(0.842) [pipe]
+64        45.41        9.95        155.489      4.275         233.9          
+256       42.42        10.17       39.718       1.462         683.8          
+512       39.99        10.33       20.184       0.847         1180.0         
+768       42.50        10.53       13.715       0.813         1230.0         BEATS-64T
+1024      45.00        10.37       10.125       0.791         1264.2         BEATS-64T
+2048      48.19        12.34       6.023        0.749         1334.4         BEATS-64T
+4096      49.31        14.39       3.514        0.747         1338.3         BEATS-64T
+8192      49.31        18.73       2.286        0.744         1344.4         BEATS-64T
+16384     49.99        21.53       1.314        0.651         1536.5         BEATS-64T
+32768     50.28        28.65       0.874        0.500         1998.6         BEATS-64T
+65536     50.48        38.82       0.592        0.389         2568.5         BEATS-64T
+131072    55.98        60.34       0.460        0.335         2987.9         BEATS-64T
+262144    99.78        102.13      0.390        0.318         3145.2         BEATS-64T
+1048576   287.53       332.59      0.317        0.302         3306.4         BEATS-64T
+
+[measured end-to-end] crossovers:
+  sync vs 1T Grace (23.3 ns/op):        B = 512
+  sync vs 64T Grace (0.842 ns/op):      B = 65536
+  pipelined(W=64) vs 64T Grace (0.842):  B = 768
+
+timed = doorbell + probes + completion; payload prewritten (symmetric
+with the CPU baseline). sync = one batch in flight (latency); pipe =
+up to 64 batches in flight on disjoint block sets (peak serving).

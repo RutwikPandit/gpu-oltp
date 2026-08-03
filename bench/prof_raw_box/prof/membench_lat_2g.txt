@@ -1,0 +1,17 @@
+provenance=GH200_H100,device="NVIDIA GH200 480GB",cc=9.0,mode=lat,date=2026-07-07
+mode=lat,bytes=16384,iters=1000000,cycles=83555077,ns_per_access=42.20,last=2222
+mode=lat,bytes=32768,iters=1000000,cycles=89856058,ns_per_access=45.38,last=7175
+mode=lat,bytes=65536,iters=1000000,cycles=92719204,ns_per_access=46.83,last=2288
+mode=lat,bytes=131072,iters=1000000,cycles=110070274,ns_per_access=55.59,last=5531
+mode=lat,bytes=262144,iters=1000000,cycles=367350050,ns_per_access=185.53,last=6417
+mode=lat,bytes=524288,iters=1000000,cycles=923025418,ns_per_access=466.17,last=130248
+mode=lat,bytes=1048576,iters=1048576,cycles=782279111,ns_per_access=376.79,last=0
+mode=lat,bytes=2097152,iters=2097152,cycles=1287698641,ns_per_access=310.11,last=0
+mode=lat,bytes=4194304,iters=4194304,cycles=2655145429,ns_per_access=319.72,last=0
+mode=lat,bytes=8388608,iters=8388608,cycles=5553824635,ns_per_access=334.38,last=0
+mode=lat,bytes=16777216,iters=16777216,cycles=14380383891,ns_per_access=432.90,last=0
+mode=lat,bytes=33554432,iters=33554432,cycles=38445803559,ns_per_access=578.67,last=0
+mode=lat,bytes=67108864,iters=67108864,cycles=88891597750,ns_per_access=668.98,last=0
+mode=lat,bytes=134217728,iters=134217728,cycles=159768654540,ns_per_access=601.20,last=0
+mode=lat,bytes=268435456,iters=200000000,cycles=158830660399,ns_per_access=401.09,last=21341980
+mode=lat,bytes=536870912,iters=200000000,cycles=259367967443,ns_per_access=654.97,last=36339983

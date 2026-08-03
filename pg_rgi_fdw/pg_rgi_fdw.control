@@ -1,0 +1,4 @@
+comment = 'GPU OLTP foreign data wrapper backed by RobustGPUIndexing (warp-cooperative chain hashtable)'
+default_version = '1.0'
+module_pathname = '$libdir/pg_rgi_fdw'
+relocatable = true

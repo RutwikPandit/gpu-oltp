@@ -1,0 +1,37 @@
+--- ../RobustGPUIndexing/include/kernels.hpp	2026-04-09 13:53:30.000000000 -0400
++++ upstream/kernels_gh200_patched.hpp	2026-07-06 23:03:09.000000000 -0400
+@@ -82,15 +82,25 @@
+   static constexpr bool do_reclaim = device_func::reclaim_required;
+   int block_size = index_type::host_reclaimer_type::block_size_;
+   std::size_t shmem_size = do_reclaim ? sizeof(uint32_t) * index_type::device_reclaimer_context_type::required_shmem_size() : 0;
+-  int num_blocks_per_sm;
+-  cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+-    &num_blocks_per_sm,
+-    kernels::batch_kernel<do_reclaim, index_type::tile_size_, device_func, index_type>,
+-    block_size,
+-    shmem_size);
+-  cudaDeviceProp device_prop;
+-  cudaGetDeviceProperties(&device_prop, 0);
+-  uint32_t num_blocks = num_blocks_per_sm * device_prop.multiProcessorCount;
++  /* MEASUREMENT PATCH (GH200 campaign, 2026-07-07, remote copy only):
++   * upstream code queries cudaGetDeviceProperties on EVERY launch; on this
++   * GH200 driver stack that call costs ~875 us and dominates all launch-path
++   * measurements. Cache the launch geometry once per template instantiation
++   * (block_size and shmem_size are compile-time-stable per instantiation).
++   * Finding to be reported upstream to RGI. */
++  static uint32_t cached_num_blocks = 0;
++  if (cached_num_blocks == 0) {
++    int num_blocks_per_sm;
++    cudaOccupancyMaxActiveBlocksPerMultiprocessor(
++      &num_blocks_per_sm,
++      kernels::batch_kernel<do_reclaim, index_type::tile_size_, device_func, index_type>,
++      block_size,
++      shmem_size);
++    int sm_count = 0;
++    cudaDeviceGetAttribute(&sm_count, cudaDevAttrMultiProcessorCount, 0);
++    cached_num_blocks = (uint32_t)num_blocks_per_sm * (uint32_t)sm_count;
++  }
++  uint32_t num_blocks = cached_num_blocks;
+ 
+   kernels::batch_kernel<do_reclaim, index_type::tile_size_><<<num_blocks, block_size, shmem_size, stream>>>(
+       index, func, num_requests);

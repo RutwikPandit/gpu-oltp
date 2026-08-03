@@ -1,0 +1,7 @@
+==PROF== Connected to process 17666 (/home/ubuntu/work/bin/rgi_profile_one)
+==PROF== Profiling "void kernels::batch_kernel<(bool)0, (unsigned int)16, kernels::GpuHashtable::find_device_func<GpuHashtable::gpu_chainhashtable<simple_slab_allocator<(unsigned int)128>, simple_debra_reclaimer<(unsigned int)32768>, (unsigned int)16>, (bool)0, (bool)1>, GpuHashtable::gpu_chainhashtable<simple_slab_allocator<(unsigned int)128>, simple_debra_reclaimer<(unsigned int)32768>, (unsigned int)16>>(T4, T3, unsigned int)": 0%
+==WARNING== Backing up device memory in system memory. Kernel replay might be slow. Consider using "--replay-mode application" to avoid memory save-and-restore.
+....50%....100% - 40 passes
+profile_one,N=67108864,B=32768,iters=1,latency_us=6493745.57,Mops=0.0
+==PROF== Disconnected from process 17666
+==PROF== Report: /home/ubuntu/work/prof/ncu_rgi_32k.ncu-rep

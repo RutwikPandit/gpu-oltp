@@ -1,0 +1,7 @@
+provenance=GH200_H100,device="NVIDIA GH200 480GB",cc=9.0,mode=copy,date=2026-07-07
+mode=copy,bytes=4294967296,blocks=33,threads=1024,ms=5.262,GBps=1632.5
+mode=copy,bytes=4294967296,blocks=66,threads=1024,ms=3.142,GBps=2733.5
+mode=copy,bytes=4294967296,blocks=132,threads=1024,ms=2.683,GBps=3201.6
+mode=copy,bytes=4294967296,blocks=264,threads=1024,ms=4.568,GBps=1880.6
+mode=copy,bytes=4294967296,blocks=528,threads=1024,ms=2.494,GBps=3444.3
+mode=copy,bytes=4294967296,blocks=1056,threads=1024,ms=2.492,GBps=3447.7

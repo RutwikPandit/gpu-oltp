@@ -1,0 +1,11 @@
+\set ON_ERROR_STOP on
+
+CREATE EXTENSION IF NOT EXISTS pg_rgi_fdw;
+CREATE SERVER IF NOT EXISTS rgi FOREIGN DATA WRAPPER pg_rgi_fdw;
+
+DROP TABLE IF EXISTS kv_ref;
+CREATE TABLE kv_ref (k bigint PRIMARY KEY, v bigint);
+
+DROP FOREIGN TABLE IF EXISTS kv_rgi;
+CREATE FOREIGN TABLE kv_rgi (k bigint, v bigint) SERVER rgi;
+

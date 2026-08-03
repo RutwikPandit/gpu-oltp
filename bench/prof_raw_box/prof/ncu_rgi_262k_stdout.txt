@@ -1,0 +1,5 @@
+==PROF== Connected to process 17660 (/home/ubuntu/work/bin/rgi_profile_one)
+==PROF== Profiling "void kernels::batch_kernel<(bool)0, (unsigned int)16, kernels::GpuHashtable::find_device_func<GpuHashtable::gpu_chainhashtable<simple_slab_allocator<(unsigned int)128>, simple_debra_reclaimer<(unsigned int)32768>, (unsigned int)16>, (bool)0, (bool)1>, GpuHashtable::gpu_chainhashtable<simple_slab_allocator<(unsigned int)128>, simple_debra_reclaimer<(unsigned int)32768>, (unsigned int)16>>(T4, T3, unsigned int)": 0%....50%....100% - 40 passes
+profile_one,N=67108864,B=262144,iters=1,latency_us=10513225.55,Mops=0.0
+==PROF== Disconnected from process 17660
+==PROF== Report: /home/ubuntu/work/prof/ncu_rgi_262k.ncu-rep

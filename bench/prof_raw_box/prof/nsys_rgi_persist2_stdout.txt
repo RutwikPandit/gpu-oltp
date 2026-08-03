@@ -1,0 +1,64 @@
+WARNING: CPU IP/backtrace sampling not supported, disabling.
+Try the 'nsys status --environment' command to learn more.
+
+WARNING: CPU context switch tracing not supported, disabling.
+Try the 'nsys status --environment' command to learn more.
+
+populated 67108864 keys (val == low key slice)
+prefilled 1048576 uniform-random request keys in [1, 67108864]
+launch-mode baseline done
+persistent v2: 1320 blocks (8 dispatchers + 1312 serving, 10496 tiles), 32 slots/block, window<=64
+v2 FIND validate (offset 0):    4096/4096 correct
+v2 FIND validate (offset wrap): 4096/4096 correct
+v2 INSERT+FIND validate:        1024/1024 correct
+v2 pipelined validate:          512/512 correct
+protocol floor (count=0 sync rendezvous): 6.25 us
+protocol floor (count=0 pipelined, W=64): 0.24 us/batch
+
+pipelined NOOP cadence (no probes):
+  B=64           0.26 us/batch     4.046 ns/op
+  B=256          0.30 us/batch     1.162 ns/op
+  B=512          0.36 us/batch     0.698 ns/op
+  B=768          0.40 us/batch     0.516 ns/op
+  B=1024         0.47 us/batch     0.456 ns/op
+  B=2048         0.86 us/batch     0.420 ns/op
+  B=4096         1.64 us/batch     0.401 ns/op
+  B=8192         3.15 us/batch     0.384 ns/op
+  B=16384        3.93 us/batch     0.240 ns/op
+  B=32768        4.45 us/batch     0.136 ns/op
+  B=65536        5.72 us/batch     0.087 ns/op
+  B=131072       8.12 us/batch     0.062 ns/op
+  B=262144      14.08 us/batch     0.054 ns/op
+  B=1048576     56.37 us/batch     0.054 ns/op
+
+uniform-random FIND against 67108864-key table [measured GH200]
+B         launch(us)   sync(us)    sync ns/op   pipe ns/op    pipe Mop/s     vs Grace64T(0.842) [pipe]
+64        45.96        9.93        155.230      4.336         230.6          
+256       42.93        10.22       39.907       1.383         723.3          
+512       40.41        10.31       20.144       0.822         1216.6         BEATS-64T
+768       42.88        10.31       13.421       0.796         1255.7         BEATS-64T
+1024      45.26        10.34       10.094       0.785         1273.2         BEATS-64T
+2048      47.83        12.33       6.023        0.739         1353.7         BEATS-64T
+4096      49.58        14.38       3.510        0.736         1358.8         BEATS-64T
+8192      49.77        18.54       2.263        0.728         1373.7         BEATS-64T
+16384     50.33        21.21       1.295        0.650         1538.2         BEATS-64T
+32768     50.72        29.91       0.913        0.505         1979.3         BEATS-64T
+65536     51.12        39.21       0.598        0.391         2559.2         BEATS-64T
+131072    56.66        60.19       0.459        0.337         2970.8         BEATS-64T
+262144    100.50       102.31      0.390        0.322         3109.3         BEATS-64T
+1048576   289.42       335.44      0.320        0.304         3293.4         BEATS-64T
+
+[measured end-to-end] crossovers:
+  sync vs 1T Grace (23.3 ns/op):        B = 512
+  sync vs 64T Grace (0.842 ns/op):      B = 65536
+  pipelined(W=64) vs 64T Grace (0.842):  B = 512
+
+timed = doorbell + probes + completion; payload prewritten (symmetric
+with the CPU baseline). sync = one batch in flight (latency); pipe =
+up to 64 batches in flight on disjoint block sets (peak serving).
+Importer error status: The importer binary and its dependencies were not found.
+Unable to retrieve the importer version: skipping importation of the QDSTRM file.
+Collecting data...
+Generating '/tmp/nsys-report-65c4.qdstrm'
+Generated:
+    /home/ubuntu/work/prof/nsys_rgi_persist2.qdstrm
