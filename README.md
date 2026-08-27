@@ -10,9 +10,9 @@ a shared GPU-service background worker. Real SQL `INSERT`/`SELECT`/`UPDATE`/
 `DELETE` runs against the GPU-resident index, with simple key qual pushdown,
 PK/UNIQUE enforcement, and transaction buffering.
 
-> **Hardware note:** built/validated on an RTX 4060 laptop (Ada, PCIe, no
-> NVLink-C2C). C2C numbers in the reports are projections until measured on
-> Grace Hopper / Grace Blackwell class hardware.
+> **Hardware note:** development and SQL validation use an RTX 4060 laptop
+> (Ada, PCIe). The C2C doorbell and standalone persistent-runtime results were
+> measured on a Lambda GH200 on 2026-07-07; full SQL-over-C2C remains unmeasured.
 
 ## Layout
 

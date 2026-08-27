@@ -35,5 +35,6 @@ internal/
 archive/
 
 # ---- editor / OS ----
+/debug.log
 .DS_Store
 *.swp

@@ -157,6 +157,12 @@ dominate). This finding motivated v2.
 
 **v2 — `rgi_persist2.cu` (sm_90, GH200, the measured runtime):**
 
+> **Source-version note:** the topology and performance below were measured on
+> the July 2026 volatile/fence build with an 8-bit completion tag. The current
+> post-campaign source uses scoped `cuda::atomic_ref` release/acquire operations
+> and a 32-bit completion tag. It is compile-validated for `sm_90`, but the
+> B≈640 / 3.3 Gop/s results must not be attributed to that revision until rerun.
+
 ```
 GRACE host                 NVLink-C2C          HOPPER resident kernel (1,320 CTAs)
                                                 = 8 dispatchers + 1,312 serving
@@ -191,13 +197,13 @@ Key properties (all chosen by measuring the alternative that lost):
   `(b·nact)%sgrid`, `nact=ceil(B/8)`, so consecutive pipelined batches run
   on disjoint block sets concurrently; strided tiles give ≤1 op/tile at
   small B (fixes v1's 16-serial-ops plateau).
-- **Completion:** per-generation padded arrival counter; the last arriver
-  (`==nact`) resets it, `__threadfence_system()`, writes one done byte.
-- **Relaxed atomics + one explicit fence per boundary** (not acq_rel per
-  op): the queues are single-producer/single-consumer, so the atomic only
-  carries a "go" signal; payload ordering is a single `__threadfence_system`.
-  On coherent C2C, single-location visibility is automatic, so relaxed is
-  safe and ~0.5 µs cheaper than acq_rel.
+- **Measured-build completion:** per-generation padded arrival counter; the
+  last arriver resets it, system-fences, and writes one done byte.
+- **Measured-build ordering:** relaxed polling plus explicit publication
+  fences; this is the implementation behind the July performance numbers.
+- **Current source ordering:** system/device-scope `cuda::atomic_ref`
+  release/acquire publication, an acq_rel arrival chain, and a 32-bit done tag.
+  This revision is compile-validated but not yet performance-validated.
 - Constants: `NDISP=8`, `HOST_WINDOW=64`, `WINDOW_K=128`, `NSLOT=32`,
   `RING_K=4096`, `TILE=16`, `BLOCK_SIZE=128`, `TILES_PER_BLOCK=8`. Submit
   thread pinned to **core 32** (core 0 caught kernel IRQs → bimodal times).
@@ -294,7 +300,8 @@ Three results that matter; work packages in `plan/WP0..WP9`.
   by the GH200 campaign (doorbell measured, crossover B≈640, v2 built). The
   `plan/` files predate the campaign and read as if R3 is open — it isn't.
 
-Other WPs: **WP0** git/test hygiene (repo is not yet under git); **WP1**
+Other WPs: **WP0** git/test hygiene (git is initialized; fail-closed test and
+build scripts remain open); **WP1**
 small-key fast path (keys <2³² as one slice → removes a 128 B dependent
 load, ~2× space, roughly doubles the bandwidth-implied ceiling); **WP6** GPU
 enumeration scan + aggregate pushdown; **WP8** row store / TAM / durability
@@ -505,10 +512,10 @@ Do not re-litigate these; each was chosen deliberately. Format:
    out; private per-block mailboxes. *Rejected (all measured losers):*
    mapped payload (0.9 µs C2C per key deref), one global polled word (serial
    re-reads), host-written mailboxes (host becomes the bottleneck).
-8. **v2: relaxed atomics + one explicit fence per boundary** (not acq_rel per
-   op) — the queues are single-producer/single-consumer, so the atomic only
-   carries a "go" signal and coherence gives single-location visibility for
-   free; ~0.5 µs cheaper than acq_rel on Grace.
+8. **v2 publication evolved after measurement** — the measured July build
+   used relaxed polling plus explicit fences; the current source uses scoped
+   release/acquire `cuda::atomic_ref` operations and a 32-bit completion tag.
+   Keep the measured result attached to the former until the latter is rerun.
 9. **Keep the toy engine + `pg_gpu_fdw`** — origin of the doorbell protocol
    and the only OLAP bandwidth-scan demo. *Cost:* two engine ABIs coexist;
    both are clearly labeled superseded/scaffold.

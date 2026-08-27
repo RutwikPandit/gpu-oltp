@@ -8,6 +8,13 @@
  * DESIGN (v2, final measured configuration — consumer-side placement
  * everywhere; every stage below was chosen by measurement on the box)
  * ---------------------------------------------------------------------------
+ * SOURCE-VERSION NOTE: the July 2026 performance campaign measured the
+ * volatile/fence publication build with an 8-bit completion tag. The current
+ * post-campaign source keeps the measured topology but uses scoped
+ * cuda::atomic_ref release/acquire publication and a 32-bit completion tag.
+ * That synchronization revision is compile-validated for sm_90 but has not
+ * been remeasured; numerical claims below refer to the July build.
+ *
  * The v1 bottlenecks (diagnosed on GH200 2026-07-07) and what replaced them:
  *
  * 1. Payload staging (cudaMemcpyAsync+sync per batch; a zero-copy mapped
@@ -32,7 +39,7 @@
  *        calls). NDISP=8 dispatcher blocks shard batches round-robin
  *        ((b-1) % NDISP); a dispatcher's leader polls the ring from L2 and
  *        its 128 threads fan the word out to the participants' private
- *        mailbox lines in parallel (ordinals via atomicAdd on disp_k so
+ *        mailbox lines in parallel (ordinals via a relaxed atomic ticket so
  *        cross-dispatcher order is safe; a block consumes in ordinal
  *        order). A serving leader polls ONLY its own line: zero traffic
  *        for batches it doesn't serve. Measured dispatch cadence floor:
@@ -45,8 +52,8 @@
  *    C2C-invalidated lines ~1.3 us/batch at nact=128 — host became the
  *    pacer); FINAL: LAST-ARRIVER POSTS PER-GENERATION — participants of
  *    batch b bump the padded device counter of generation b % WINDOW_K
- *    (system fence first); the last arriver resets it and posts ONE tag
- *    byte to the generation's mapped-host done line. The RMW chain
+ *    with acq_rel RMWs; the last arriver resets it and release-publishes
+ *    ONE 32-bit tag to the generation's mapped-host done line. The RMW chain
  *    (~15 ns x nact) adds batch latency but runs in parallel across
  *    in-flight batches; the host pays exactly one local read per batch.
  *
@@ -88,6 +95,7 @@
 #include <gpu_chainhashtable.hpp>
 #include <simple_slab_alloc.hpp>
 #include <simple_debra_reclaim.hpp>
+#include <cuda/atomic>
 
 #include <cstdint>
 #include <cstdio>
@@ -97,7 +105,6 @@
 #include <vector>
 #include <chrono>
 #include <random>
-#include <atomic>
 #ifdef __linux__
 #include <sched.h>
 #endif
@@ -123,6 +130,7 @@ using alloc_inst_t = slab_t::device_instance_type;
  * guarantees batch b-2W was waited (counter reset, done consumed) before
  * b is posted. Must divide 2048 (the batchlo field period). */
 #define WINDOW_K    (2u * HOST_WINDOW)
+#define DONE_STRIDE_U32 (64u / sizeof(uint32_t))
 /* mailbox slots per block: a block's consecutive assignments alternate
  * through NSLOT slots, so up to NSLOT of its batches can be posted but
  * unconsumed. Bounds the window when batches share blocks:
@@ -155,21 +163,22 @@ pub_pack(unsigned long long batch, uint32_t count, uint32_t offset) {
 }
 
 /* Per-(block, slot) mailbox line: the dispatcher writes rel + payload,
- * fences, then writes seq = the block's assignment ordinal (1, 2, 3, ...).
+ * then release-publishes seq = the block's assignment ordinal (1, 2, 3, ...).
  * A serving block's leader polls ONLY its own next slot: batches it does
  * not serve cost it nothing (the fix for the shared-word serial-consume
  * bottleneck), so pipelined batches dispatch independently. */
 struct Mailbox {
-  volatile unsigned long long seq;      /* assignment ordinal; ~0ull = stop */
-  volatile unsigned long long payload;  /* pub_pack word */
-  volatile unsigned long long rel;      /* this block's rank within the batch */
+  unsigned long long seq;      /* assignment ordinal; ~0ull = stop */
+  unsigned long long payload;  /* pub_pack word */
+  unsigned long long rel;      /* this block's rank within the batch */
   uint32_t pad[10];
 };
+static_assert(sizeof(Mailbox) == 64, "mailboxes must occupy one cache line");
 
-/* Done-byte tag for batch b: nonzero, differs from the previous occupant
+/* Completion tag for batch b: nonzero, differs from the previous occupant
  * of the same generation (b vs b - WINDOW_K differ in uniq). */
-static __host__ __device__ inline uint8_t done_tag(unsigned long long w) {
-  return (uint8_t)(0x80u | ((uint32_t)(w >> 49) & 0x7Fu));
+static __host__ __device__ inline uint32_t done_tag(unsigned long long w) {
+  return 0x80u | ((uint32_t)(w >> 49) & 0x7Fu);
 }
 
 /* Arrival counters padded to 128 B: concurrent batches (distinct
@@ -178,6 +187,14 @@ struct ArriveCtr {
   unsigned int n;
   uint32_t pad[31];
 };
+static_assert(sizeof(ArriveCtr) == 128, "arrival counters must remain isolated");
+
+using system_u64_ref =
+    cuda::atomic_ref<unsigned long long, cuda::thread_scope_system>;
+using device_u64_ref =
+    cuda::atomic_ref<unsigned long long, cuda::thread_scope_device>;
+using system_u32_ref = cuda::atomic_ref<uint32_t, cuda::thread_scope_system>;
+using device_u32_ref = cuda::atomic_ref<uint32_t, cuda::thread_scope_device>;
 
 static __host__ __device__ inline uint32_t
 active_blocks(uint32_t count, uint32_t grid) {
@@ -189,10 +206,10 @@ active_blocks(uint32_t count, uint32_t grid) {
 /* ------------------------------- kernel -------------------------------- */
 __global__ void __launch_bounds__(BLOCK_SIZE, 8)
 rgi_persistent2_kernel(table_t table, alloc_inst_t alloc_inst,
-                       const unsigned long long *g_ring, /* managed HBM, RING_K */
+                       unsigned long long *g_ring,       /* managed HBM, RING_K */
                        Mailbox *mbox,                    /* device, grid*NSLOT */
                        unsigned long long *disp_k,       /* device, per-block ordinal */
-                       volatile uint8_t *doneb,          /* mapped host, WINDOW_K lines */
+                       uint32_t *doneb,                  /* mapped host, WINDOW_K lines */
                        ArriveCtr *g_arrive,              /* device, WINDOW_K padded ctrs */
                        const uint8_t  *d_types,          /* managed, HBM  */
                        const uint32_t *d_keys,           /* managed, HBM, 2 slices/key */
@@ -213,19 +230,22 @@ rgi_persistent2_kernel(table_t table, alloc_inst_t alloc_inst,
      * the host's ring word from L2, then all 128 threads fan it out to
      * the participating blocks' mailboxes in parallel. Concurrent batches
      * fan out from different dispatchers; per-block assignment ordinals
-     * are taken with atomicAdd (a serving block consumes in ordinal
+     * are taken with relaxed atomic tickets (a serving block consumes in ordinal
      * order, so cross-batch write order does not matter). */
     unsigned long long expect = blockIdx.x + 1;
     for (;;) {
       if (threadIdx.x == 0) {
         const unsigned long long want = expect & 0x3FFFFFull;
+        system_u64_ref ring_slot(g_ring[expect % RING_K]);
         unsigned long long v;
         for (;;) {
-          v = *(volatile unsigned long long *)&g_ring[expect % RING_K];
-          if (v == ~0ull || (v >> 42) == want) break;
+          v = ring_slot.load(cuda::memory_order_relaxed);
+          if (v == ~0ull || (v >> 42) == want) {
+            v = ring_slot.load(cuda::memory_order_acquire);
+            if (v == ~0ull || (v >> 42) == want) break;
+          }
           __nanosleep(32);
         }
-        __threadfence_system();  /* acquire: host request writes precede ring */
         s_pub = v;
       }
       __syncthreads();
@@ -235,9 +255,10 @@ rgi_persistent2_kernel(table_t table, alloc_inst_t alloc_inst,
          * (the host drains all batches before stopping, so no dispatcher
          * is mid-fan-out here) */
         if (blockIdx.x == 0) {
-          for (uint32_t i = threadIdx.x; i < gridDim.x * NSLOT; i += BLOCK_SIZE)
-            mbox[i].seq = ~0ull;
-          __threadfence();
+          for (uint32_t i = threadIdx.x; i < gridDim.x * NSLOT; i += BLOCK_SIZE) {
+            device_u64_ref stop_seq(mbox[i].seq);
+            stop_seq.store(~0ull, cuda::memory_order_release);
+          }
         }
         return;
       }
@@ -245,12 +266,14 @@ rgi_persistent2_kernel(table_t table, alloc_inst_t alloc_inst,
       const uint32_t start = (uint32_t)((expect * nact) % sgrid);
       for (uint32_t j = threadIdx.x; j < nact; j += BLOCK_SIZE) {
         const uint32_t blk = NDISP + (start + j) % sgrid;
-        const unsigned long long k = atomicAdd((unsigned long long *)&disp_k[blk], 1ull) + 1;
+        device_u64_ref ticket(disp_k[blk]);
+        const unsigned long long k =
+            ticket.fetch_add(1ull, cuda::memory_order_relaxed) + 1;
         Mailbox *mb = &mbox[(size_t)blk * NSLOT + ((k - 1) & (NSLOT - 1))];
         mb->payload = w;
         mb->rel = j;
-        __threadfence();               /* payload+rel visible before seq */
-        mb->seq = k;
+        device_u64_ref ready(mb->seq);
+        ready.store(k, cuda::memory_order_release);
       }
       expect += NDISP;
       __syncthreads();
@@ -261,23 +284,26 @@ rgi_persistent2_kernel(table_t table, alloc_inst_t alloc_inst,
   unsigned long long myk = 1;          /* leader-only: next assignment ordinal */
   for (;;) {
     /* ---- doorbell: the leader polls ITS OWN next mailbox slot only.
-     * seq is written by the dispatcher AFTER rel+payload (fenced), so a
-     * seq match means the slot is complete. ---- */
+     * seq is release-published after rel+payload, so an acquire that sees
+     * the matching sequence also publishes the mailbox contents. ---- */
     if (threadIdx.x == 0) {
       Mailbox *mb = &mbox[(size_t)blockIdx.x * NSLOT + ((myk - 1) & (NSLOT - 1))];
+      device_u64_ref ready(mb->seq);
       unsigned long long s;
       /* exponential backoff: ~1,300 idle leaders polling every 64 ns is
        * ~130 GB/s of L2 read traffic that starves the actual probes */
       uint32_t bo = 32;
       for (;;) {
-        s = mb->seq;
-        if (s == myk || s == ~0ull) break;
+        s = ready.load(cuda::memory_order_relaxed);
+        if (s == myk || s == ~0ull) {
+          s = ready.load(cuda::memory_order_acquire);
+          if (s == myk || s == ~0ull) break;
+        }
         __nanosleep(bo);
         if (bo < 1024) bo <<= 1;
       }
       if (s == ~0ull) { s_pub = ~0ull; }
       else {
-        __threadfence_system();  /* acquire payload + host request writes */
         s_pub = mb->payload;
         s_rel = (uint32_t)mb->rel;
         myk++;
@@ -320,17 +346,16 @@ rgi_persistent2_kernel(table_t table, alloc_inst_t alloc_inst,
           if (tile.thread_rank() == 0) d_out[r] = v;
         }
       }
-      /* ---- completion: last arriver posts the generation's tag byte.
-       * Each participant system-fences (its d_out writes become host-
-       * ordered for a later readback) then bumps the generation counter;
-       * whoever sees nact resets it and posts the single done byte. ---- */
+      /* ---- completion: acq_rel RMWs form a chain across participants,
+       * making every result write happen-before the last arriver's
+       * system-scope release of the generation tag. ---- */
       __syncthreads();
       if (threadIdx.x == 0) {
-        __threadfence_system();
-        if (atomicAdd(&g_arrive[gen].n, 1u) + 1 == nact) {
-          g_arrive[gen].n = 0;       /* safe: no writer until gen+WINDOW_K */
-          __threadfence_system();    /* reset ordered before done post */
-          doneb[(size_t)gen * 64] = done_tag(w);
+        device_u32_ref arrive(g_arrive[gen].n);
+        if (arrive.fetch_add(1u, cuda::memory_order_acq_rel) + 1 == nact) {
+          arrive.store(0u, cuda::memory_order_relaxed);
+          system_u32_ref done(doneb[(size_t)gen * DONE_STRIDE_U32]);
+          done.store(done_tag(w), cuda::memory_order_release);
         }
       }
     }
@@ -342,7 +367,7 @@ struct PersistEngine2 {
   unsigned long long *g_ring;        /* managed, preferred HBM; RING_K words */
   Mailbox     *mbox;                 /* device; grid*NSLOT lines */
   unsigned long long *disp_k;        /* device; per-block assignment ordinal */
-  uint8_t     *h_doneb, *d_doneb;    /* mapped host, WINDOW_K 64B lines */
+  uint32_t    *h_doneb, *d_doneb;    /* mapped host, one tag per 64B line */
   ArriveCtr   *g_arrive;             /* device, WINDOW_K padded counters */
   uint8_t     *d_types;              /* managed, preferred HBM */
   uint32_t    *d_keys;               /* managed, preferred HBM */
@@ -351,7 +376,7 @@ struct PersistEngine2 {
   unsigned long long cur_batch = 0;
   unsigned long long posted[WINDOW_K];        /* packed word per generation */
   int          grid = 0;             /* total blocks incl. dispatcher */
-  uint32_t     sgrid = 0;            /* serving blocks = grid - 1 */
+  uint32_t     sgrid = 0;            /* serving blocks = grid - NDISP */
 };
 
 /* Effective pipeline depth for batches of nact blocks: a block's slot is
@@ -376,6 +401,16 @@ static void *managed_hbm(size_t bytes) {
 
 /* Allocation only — safe to call before the launch-mode phase. */
 static void persist2_alloc(PersistEngine2 &p) {
+  int native_host_atomics = 0, concurrent_managed = 0;
+  CK(cudaDeviceGetAttribute(&native_host_atomics,
+                            cudaDevAttrHostNativeAtomicSupported, 0));
+  CK(cudaDeviceGetAttribute(&concurrent_managed,
+                            cudaDevAttrConcurrentManagedAccess, 0));
+  if (!native_host_atomics || !concurrent_managed) {
+    fprintf(stderr, "persistent runtime requires coherent system-scope atomics\n");
+    exit(1);
+  }
+
   /* grid size decided up front (occupancy query launches nothing) */
   int bpm = 0;
   CK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
@@ -435,21 +470,24 @@ static void persist2_launch_grid(PersistEngine2 &p, table_t &table, slab_t &ha) 
   CK(cudaEventDestroy(ev));
 }
 
-/* Post one batch: a single 8-byte store into the HBM ring. NO cuda calls. */
+/* Post one batch: one system-scope release store into the HBM ring. */
 static inline void persist2_post(PersistEngine2 &p, uint32_t count, uint32_t offset) {
   p.cur_batch += 1;
   const unsigned long long w = pub_pack(p.cur_batch, count, offset);
   p.posted[p.cur_batch % WINDOW_K] = w;
-  std::atomic_thread_fence(std::memory_order_release);
-  ((volatile unsigned long long *)p.g_ring)[p.cur_batch % RING_K] = w;
+  system_u64_ref ring_slot(p.g_ring[p.cur_batch % RING_K]);
+  ring_slot.store(w, cuda::memory_order_release);
 }
 
-/* Wait for batch b: ONE local read of its generation's done byte. */
+/* Wait for batch b: local polling, then one acquire of its completion tag. */
 static inline void persist2_wait(PersistEngine2 &p, unsigned long long b) {
-  const uint8_t tag = done_tag(p.posted[b % WINDOW_K]);
-  volatile uint8_t *db = p.h_doneb + (size_t)(b % WINDOW_K) * 64;
-  while (*db != tag) { }             /* tight spin (pinned thread) */
-  std::atomic_thread_fence(std::memory_order_acquire);
+  const uint32_t tag = done_tag(p.posted[b % WINDOW_K]);
+  uint32_t *db = p.h_doneb + (size_t)(b % WINDOW_K) * DONE_STRIDE_U32;
+  system_u32_ref done(*db);
+  for (;;) {
+    if (done.load(cuda::memory_order_relaxed) == tag &&
+        done.load(cuda::memory_order_acquire) == tag) break;
+  }
 }
 
 /* Synchronous rendezvous = post + wait. */
@@ -459,9 +497,10 @@ static inline void persist2_submit(PersistEngine2 &p, uint32_t count, uint32_t o
 }
 
 static void persist2_stop(PersistEngine2 &p) {
-  std::atomic_thread_fence(std::memory_order_release);
-  for (uint32_t s = 0; s < RING_K; ++s)
-    ((volatile unsigned long long *)p.g_ring)[s] = ~0ull;
+  for (uint32_t s = 0; s < RING_K; ++s) {
+    system_u64_ref ring_slot(p.g_ring[s]);
+    ring_slot.store(~0ull, cuda::memory_order_release);
+  }
   CK(cudaStreamSynchronize(p.kstream));
 }
 
@@ -598,9 +637,25 @@ int main(int argc, char **argv) {
     printf("v2 FIND validate (offset wrap): %u/%u correct\n", M - bad, M);
     if (bad) { fprintf(stderr, "VALIDATION FAILED\n"); persist2_stop(p); return 1; }
 
+    /* Modify request data while the persistent grid is resident. The ring's
+     * release/acquire pair must publish this key before the serving CTA reads it. */
+    const uint32_t old_lo = p.d_keys[0], old_hi = p.d_keys[1];
+    const uint32_t live_key = (N > 1 && old_lo == N) ? 1u : N;
+    p.d_keys[0] = live_key;
+    p.d_keys[1] = 0;
+    p.d_types[0] = POP_FIND;
+    persist2_submit(p, 1, 0);
+    printf("scoped-atomic request publish:  %s\n",
+           p.d_out[0] == live_key ? "correct" : "FAILED");
+    if (p.d_out[0] != live_key) {
+      fprintf(stderr, "VALIDATION FAILED\n"); persist2_stop(p); return 1;
+    }
+    p.d_keys[0] = old_lo;
+    p.d_keys[1] = old_hi;
+
     /* INSERT path: update 1024 existing keys through the doorbell (insert
      * with update_if_exists rewrites val = low slice — idempotent), then
-     * re-find them. Host writes types over C2C; post() fences before ring. */
+     * re-find them. Host writes types over C2C; post() release-publishes them. */
     memset(p.d_types, POP_INSERT, 1024);
     persist2_submit(p, 1024, 0);
     memset(p.d_types, POP_FIND, 1024);

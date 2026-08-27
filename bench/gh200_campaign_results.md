@@ -162,14 +162,23 @@ binding even on GH200** — now a measured statement on two platforms.
 
 ## 4b. Persistent v2 (`engine/rgi_persist2.cu`) — the MEASURED end-to-end path
 
+**Source-version note (2026-08-26):** this section records the July 2026
+volatile/fence build with an 8-bit completion tag. The current post-campaign
+source replaces publication boundaries with scoped `cuda::atomic_ref`
+release/acquire operations and uses a 32-bit completion tag. That revision is
+compile-validated for `sm_90` but has not been remeasured; the 0.24 µs cadence,
+B≈640 crossover, and 3.3 Gop/s peak below belong to the July build.
+
 The redesign motivated by §4's finding. Same 64M-key RGI chain hashtable
 in HBM, uniform-random FIND keys in [1, 64M] (YCSB-C read shape),
 prewritten 1M-entry request array with a rotating offset (payload
 materialization excluded and symmetric with the CPU baseline, which also
 reads prewritten arrays). Timed rendezvous = doorbell + probes +
-completion. Validation: 4096/4096 at offset 0 and across the offset
-wrap, 1024/1024 INSERT+FIND, 512/512 pipelined. Two consecutive runs
-agreed to <2% at every point.
+completion. Validation: 4096/4096 at offset 0 and across the offset wrap and
+1024/1024 INSERT+FIND. An eight-batch pipelined window completed, but its
+overlapping `out[]` slots were not individually materialized or checked; a
+subsequent synchronous 512-op batch validated the data path. Two consecutive
+performance runs agreed to <2% at every point.
 
 **Architecture (each stage chosen by measurement; see the file header
 for the alternatives that lost):**
@@ -185,8 +194,8 @@ for the alternatives that lost):**
 - Requests AND results live in managed-HBM (consumer-side placement);
   moving `out[]` from mapped-host to HBM alone moved the pipelined
   crossover from B = 16k to B = 1k — per-op C2C stores were the last
-  per-op serial cost. Completion = per-generation arrival counter, last
-  arriver posts one tag byte to a mapped-host done line.
+  per-op serial cost. In the measured build, completion used a per-generation
+  arrival counter and the last arriver posted one tag byte to mapped host memory.
 
 **Protocol floors (count = 0, no probes): sync rendezvous 6.2 µs;
 pipelined dispatch cadence 0.24 µs/batch (W=64).** The NOOP sweep
